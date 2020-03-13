@@ -13,15 +13,15 @@ This is an open assessment looking at potential health effects of a national fis
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE) 
 
-
 ```
 
 Calculation is based on BONUS GOHERR project and its [http://en.opasnet.org/w/Goherr_assessment](fish health benefit-risk assessment).
 
-```{r}
+```{r downloads}
 
 # This is code Op_fi5923/model on page [[Kotimaisen kalan edistämisohjelma]]
-library(OpasnetUtils)
+# The code was forked from Op_fi5889/model on page [[Ruori]] and Op_en7748/model on page [[Goherr assessment]]
+library(OpasnetUtils) # Install the newest version from https://github.com/jtuomist/OpasnetUtils not from CRAN.
 library(ggplot2)
 library(plotly)
 
@@ -61,13 +61,9 @@ prepare <- function(dat, type=NULL, drop=NULL) {
   return(subgrouping(out))
 }
 
-#population <- Ovariable("population", data = prepare(dat,"population",c("Type","Exposure_agent","Response","Unit")))
-population <- 0
-
 amount <- Ovariable("amount", data = prepare(dat, "amount", c("Type","Response","Exposure_agent")))
 
-# Exposuressa summataan Kala-sarake pois, jolloin jää vain Exposure_agent.
-# Miten lisätään tieto Exposure:To child vai To eater?
+# Exposure:To child and To eater not needed, because dioxins are not (yet) included
 
 conc_vit <- Ovariable(
   "conc_vit",
@@ -106,35 +102,38 @@ exposure <- Ovariable(
   marginal = c(TRUE, TRUE, FALSE)
 )
 
-# frexposed <- Ovariable("frexposed", data=prepare(dat, "frexposed", c("Type","Response","Unit")))
-
+# Incidence-based data not needed
 frexposed <- 1
-
-#incidence <- Ovariable("incidence", data = prepare(dat,"incidence",c("Type","Exposure_agent","Unit")))
+population <- 0
 incidence <- 0
 
-#ERFChoice <- Ovariable(
-#  "ERFchoice",
-#  data=data.frame(
-#    Response=c("IQ loss","Liver cancer","Yes or no dental defect","Cancer morbidity","Sperm concenctration"),
-#    Exposure_agent=c("Lead","Aflatoxin","TEQ","TEQ","TEQ"),
-#    Result=1)
-#)
+ERFChoice <- Ovariable(
+  "ERFchoice",
+  data=data.frame(
+    Response=c("Loss in child's IQ points","CHD2 mortality","Breast cancer","All-cause mortality","Depression"),
+    Exposure_agent=c("DHA","Omega3","Omega3","Fish","Fish"),
+    Result=1)
+)
 
 case_burden <- Ovariable("case_burden", data= prepare(dat,"case burden",c("Type","Exposure_agent","Unit")))
 
-#InpPAF <- EvalOutput(Ovariable("InpPAF", data =  prepare(dat,"PAF","Type")))
-
-# InpBoD2 <- EvalOutput(Ovariable("InpBoD", data = prepare(dat, "BoD", c("Type","Exposure_agent")))) # REMOVE RUORI CHD AND USE GOHERR
-
-objects.latest("Op_en5917", code_name="InpBoD") # [[Disease risk]] InpBoD
+objects.latest("Op_en5917", code_name="InpBoD") # [[Disease risk]] InpBoD for GOHERR
 
 InpBoD <- EvalOutput(InpBoD) # Evaluated because is not a dependency but an Input
 InpBoD <- InpBoD[InpBoD$Country=="FI",colnames(InpBoD@output)!="Country"]
 
 objects.latest("Op_en2261",code_name="BoDattr2") # [[Health impact assessment]]
 
-exposure <- EvalOutput(exposure, verbose=TRUE)
+```
+
+```{r modelrun}
+
+tryCatch(BoDattr <- EvalOutput(BoDattr, verbose=TRUE))
+
+```
+
+
+```{r plots}
 
 ###################
 # Graphs
@@ -144,50 +143,27 @@ trim <- function(ova) return(oapply(ova, NULL, mean, "Iter")@output)
 plot_ly(trim(amount), x=~Scenario, y=~amountResult, color=~Kala, type="bar") %>%
   layout(yaxis=list(title="Kalan kokonaiskulutus Suomessa (milj kg /a)"), barmode="stack")
 
-plot_ly(trim(conc_vit), x=~Nutrient, y=~conc_vitResult, color=~Fish, type="scatter", mode="markers") %>%
+plot_ly(trim(conc_vit), x=~Nutrient, y=~conc_vitResult, color=~Kala, type="scatter", mode="markers") %>%
   layout(yaxis=list(title="Concentrations of nutrients (mg or ug /g)"))
 
-plot_ly(trim(exposure), x=~Scenario, y=~exposureResult, color=~Exposure_agent, type="bar") %>%
-  layout(yaxis=list(title="Exposure to nutrients (mg or ug /d)"))
+tmp <- exposure / Ovariable(
+  output = data.frame(
+    Exposure_agent = c("Fish","Vitamin D", "Omega3", "ALA", "DHA"),
+    Result = c(1, 1, 1000, 1000, 1000)
+  ), marginal = c(TRUE, FALSE)
+)
+plot_ly(trim(tmp), x=~Scenario, y=~Result, color=~Exposure_agent, text=~Exposure_agent, type="bar") %>%
+  layout(yaxis=list(title="Exposure to nutrients (g or ug /d)"))
 
 summary(conc_vit, "mean")
 
 summary(exposure,"mean")
 
-#summary(incidence, "mean")
+summary(amount,"mean")
 
-#summary(population)
+summary(BoD,"mean")
 
-
-```
-
-```{r}
-
-tryCatch(BoDattr <- EvalOutput(BoDattr, verbose=TRUE))
-
-if(FALSE) {
-
-cat("exposure\n")
-summary(exposure,marginals=c("Exposure_agent","Age","Scenario"))
-exposure@output[exposure$Iter==1,]
-cat("ERF\n")
-ERF@output[ERF$Iter==1,]
-#cat("incidence\n")
-#summary(incidence)
-#cat("PAF\n")
-#summary(PAF)
-#cat("BoD\n")
-#summary(BoD)
-#cat("BoDattr\n")
-#summary(BoDattr,marginals=c("Response","Exposure_agent","Scenario","Age"))
-
-} # ENDIF
-
-
-```
-
-
-```{r}
+summary(BoDattr,"mean")
 
 cat("Kalaperäisiä tautitaakkoja Suomessa\n")
 tmp <- summary(oapply(BoDattr,NULL,sum,"Group")[BoDattr$Scenario=="BAU",])
@@ -199,9 +175,12 @@ data.frame(
   Keskihajonta = signif(tmp$sd,2)
 )#[rev(match(lev, tmp$Exposure_agent)),]
 
-ggplot(oapply(BoDattr, NULL, mean, "Iter")@output, aes(x=Scenario, weight=BoDattrResult, fill=Response))+geom_bar()
+ggplot(trim(BoDattr), aes(x=Scenario, weight=BoDattrResult, fill=Response))+geom_bar()
 
-ggplot(oapply(BoDattr, NULL, mean, "Iter")@output, aes(x=Scenario, weight=BoDattrResult, fill=Exposure_agent))+geom_bar()
+ggplot(trim(BoDattr), aes(x=Scenario, weight=BoDattrResult, fill=Exposure_agent))+geom_bar()
+
+plot_ly(trim(BoDattr), x=~Scenario, y=~BoDattrResult, color=~Response, text=~paste(Group, Exposure_agent, sep=": "), type="bar") %>%
+  layout(yaxis=list(title="Disease burden (DALY /a); CHD2=coronary heart disease"), barmode="stack")
 
 tmp <- summary(oapply(BoDattr,NULL,sum,c("Age","Exposure_agent")))
 data.frame(
@@ -210,25 +189,6 @@ data.frame(
   "95 luottamusväli" = paste0(signif(tmp$Q0.025,2)," - ", signif(tmp$Q0.975,2)),
   Keskihajonta = signif(tmp$sd,2)
 )
-
-dodge <- position_dodge(width=0.7)
-
-ggplot(summary(oapply(BoDattr[BoDattr$Scenario=="BAU",],NULL,sum,"Age")),
-       aes(x=Exposure_agent, weight=unlist(mean), fill=Response))+geom_bar()+
-  theme(legend.position = "bottom")+
-  labs(
-   title="Elintarvikkeiden tautitaakkoja Suomessa",
-   subtitle="Haittapainotettua elinvuotta vuodessa (DALY/a)")+
-coord_flip()
-
-ggplot(summary(oapply(BoDattr, NULL, sum,c("Age","Response"))),
-       aes(x=Exposure_agent, weight=unlist(mean), fill=Scenario))+geom_bar(position="dodge")+
-  coord_flip(ylim=c(0,70000))+
-  labs(
-     title="Elintarvikeperäisiä tautitaakkoja Suomessa",
-     subtitle="Haittapainotettua elinvuotta vuodessa (DALY/a)")+
-  geom_errorbar(aes(ymin=unlist(Q0.025),ymax=unlist(Q0.975),group=Scenario),position=dodge, width=0.3)+
-  geom_text(aes(label=signif(unlist(mean),2), y=unlist(Q0.975)+5000, group=Scenario), position=dodge)
 
 ################ Insight network
 

@@ -3,6 +3,8 @@ title: "Fish and health with national fish promotion programme"
 output:
   html_document:
     df_print: paged
+  pdf_document: default
+  word_document: default
 ---
 
 This is an open assessment looking at potential health effects of a national fish promotion program in Finland. The details of the assessment are described on [Opasnet](http://fi.opasnet.org/fi/Kotimaisen_kalan_edistämisohjelma). This file contains the R code to run the assessment model.
@@ -10,6 +12,7 @@ This is an open assessment looking at potential health effects of a national fis
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE) 
+
 
 ```
 
@@ -36,12 +39,14 @@ CTable <- opbase.data("Op_fi5923",subset="CollapseMarginals")
 for(i in 1:ncol(CTable)) {CTable[[i]] <- as.character(CTable[[i]])}
 CollapseTableParser(CTable)
 
+objects.latest("Op_en2031", code_name="subgrouping") # [[Exposure-response function]] subgrouping
+
 cat("Laskennassa käytetty data.\n")
-oprint(dat)
+dat
 cat("Tarkastellut päätökset.\n")
-oprint(dec)
+dec
 cat("Aggregoidut marginaalit.\n")
-oprint(CTable)
+CTable
 
 #' prepare adjusts the data table for ovariables. Requires function subgrouping from code Op_en2031/initiate on page [[Exposure-response function]]
 #' @param dat data.frame
@@ -56,9 +61,8 @@ prepare <- function(dat, type=NULL, drop=NULL) {
   return(subgrouping(out))
 }
 
-objects.latest("Op_en2031", code_name="subgrouping") # [[Exposure-response function]] subgrouping
-
-population <- Ovariable("population", data = prepare(dat,"population",c("Type","Exposure_agent","Response","Unit")))
+#population <- Ovariable("population", data = prepare(dat,"population",c("Type","Exposure_agent","Response","Unit")))
+population <- 0
 
 amount <- Ovariable("amount", data = prepare(dat, "amount", c("Type","Response","Exposure_agent")))
 
@@ -76,7 +80,7 @@ levels(conc_vit@data$Nutrient)[levels(conc_vit@data$Nutrient)=="rasvahappo 18:3 
 levels(conc_vit@data$Nutrient)[levels(conc_vit@data$Nutrient)=="rasvahappo 22:6 n-3 (DHA) (mg)"] <- "DHA"
 levels(conc_vit@data$Nutrient)[levels(conc_vit@data$Nutrient)=="proteiini (g)"] <- "Fish"
 conc_vit@data$conc_vitResult[conc_vit@data$Nutrient=="Fish"] <- 1
-conc_vit <- conc_vit[conc_vit$Nutrient %in% c("Vitamin D", "Omega3", "ALA", "DHA", "Fish") , ]
+conc_vit@data <- dropall(conc_vit@data[conc_vit@data$Nutrient %in% c("Vitamin D", "Omega3", "ALA", "DHA", "Fish") , ])
 
 exposure <- Ovariable(
   "exposure",
@@ -93,7 +97,7 @@ exposure <- Ovariable(
         Result = 1
       ))
       
-    amount <- amount * 1000 / 5.52 /365.25 # M kg/a per population --> g/d per person
+    amount <- amount * 0.7 * 1000 / 5.52 /365.25 # M kg/a per 5.52M population --> g/d per person. Assuming loss 30 % from whole fish to fillet.
     out <- conc_vit * tmp * amount
     colnames(out@output)[colnames(out@output)=="Nutrient"] <- "Exposure_agent"
       
@@ -106,7 +110,8 @@ exposure <- Ovariable(
 
 frexposed <- 1
 
-incidence <- Ovariable("incidence", data = prepare(dat,"incidence",c("Type","Exposure_agent","Unit")))
+#incidence <- Ovariable("incidence", data = prepare(dat,"incidence",c("Type","Exposure_agent","Unit")))
+incidence <- 0
 
 #ERFChoice <- Ovariable(
 #  "ERFchoice",
@@ -131,78 +136,80 @@ objects.latest("Op_en2261",code_name="BoDattr2") # [[Health impact assessment]]
 
 exposure <- EvalOutput(exposure, verbose=TRUE)
 
-```
-
-```{r}
-
-BoDattr <- EvalOutput(BoDattr, verbose=TRUE)
-
-cat("exposure\n")
-oprint(summary(exposure,marginals=c("Exposure_agent","Age","Scenario")),digits=7)
-oprint(exposure@output[exposure$Iter==1,])
-cat("dose\n")
-oprint(summary(dose),digits=7)
-cat("ERF\n")
-oprint(ERF@output[ERF$Iter==1,],digits=7)
-cat("incidence\n")
-oprint(summary(incidence),digits=7)
-cat("frexposed\n")
-oprint(summary(frexposed),digits=7)
-cat("PAF\n")
-oprint(summary(PAF),digits=7)
-cat("BoD\n")
-oprint(summary(BoD),digits=7)
-cat("BoDattr\n")
-oprint(summary(BoDattr,marginals=c("Response","Exposure_agent","Scenario","Age")),digits=7)
-cat("Vähennyspotentiaali\n")
-#tmp <- summary(utility, marginals=c("Exposure_agent"))
-#oprint(tmp[order(unlist(tmp$mean)),])
-
-#objects.store(list=setdiff(ls(), "wiki_username"))
-#cat("Objects", setdiff(ls(), "wiki_username"), "stored.\n")
-
 ###################
 # Graphs
 
-plot_ly(data=amount@output, x=~Scenario, y=~amountResult, color=~Kala, type="bar") 
+trim <- function(ova) return(oapply(ova, NULL, mean, "Iter")@output)
 
-plot_ly(conc_vit@output, x=~Nutrient, y=~conc_vitResult, color=~Fish, type="scatter", mode="markers")
+plot_ly(trim(amount), x=~Scenario, y=~amountResult, color=~Kala, type="bar") %>%
+  layout(yaxis=list(title="Kalan kokonaiskulutus Suomessa (milj kg /a)"), barmode="stack")
 
-plot_ly(exposure@output, x=~Scenario, y=~exposureResult, color=~Exposure_agent, type="bar")
+plot_ly(trim(conc_vit), x=~Nutrient, y=~conc_vitResult, color=~Fish, type="scatter", mode="markers") %>%
+  layout(yaxis=list(title="Concentrations of nutrients (mg or ug /g)"))
+
+plot_ly(trim(exposure), x=~Scenario, y=~exposureResult, color=~Exposure_agent, type="bar") %>%
+  layout(yaxis=list(title="Exposure to nutrients (mg or ug /d)"))
 
 summary(conc_vit, "mean")
 
 summary(exposure,"mean")
 
-summary(incidence, "mean")
+#summary(incidence, "mean")
 
-summary(population)
-
+#summary(population)
 
 
 ```
 
 ```{r}
-BoDattr <- CollapseMarginal(BoDattr,"Threshold","sample")
-utility <- CollapseMarginal(utility,"Threshold","sample")
 
-cat("Elintarvikeperäisiä tautitaakkoja Suomessa\n")
-tmp <- summary(oapply(BoDattr[BoDattr$Scenario=="BAU",],NULL,sum,c("Age","Response")))
-oprint(data.frame(
+tryCatch(BoDattr <- EvalOutput(BoDattr, verbose=TRUE))
+
+if(FALSE) {
+
+cat("exposure\n")
+summary(exposure,marginals=c("Exposure_agent","Age","Scenario"))
+exposure@output[exposure$Iter==1,]
+cat("ERF\n")
+ERF@output[ERF$Iter==1,]
+#cat("incidence\n")
+#summary(incidence)
+#cat("PAF\n")
+#summary(PAF)
+#cat("BoD\n")
+#summary(BoD)
+#cat("BoDattr\n")
+#summary(BoDattr,marginals=c("Response","Exposure_agent","Scenario","Age"))
+
+} # ENDIF
+
+
+```
+
+
+```{r}
+
+cat("Kalaperäisiä tautitaakkoja Suomessa\n")
+tmp <- summary(oapply(BoDattr,NULL,sum,"Group")[BoDattr$Scenario=="BAU",])
+data.frame(
   Altiste = tmp$Exposure_agent,
+  Vaikutus = tmp$Response,
+  Keskiarvo = as.character(signif(tmp$mean,2)),
+  "95 luottamusväli" = paste0(signif(tmp$Q0.025,2)," - ", signif(tmp$Q0.975,2)),
+  Keskihajonta = signif(tmp$sd,2)
+)#[rev(match(lev, tmp$Exposure_agent)),]
+
+ggplot(oapply(BoDattr, NULL, mean, "Iter")@output, aes(x=Scenario, weight=BoDattrResult, fill=Response))+geom_bar()
+
+ggplot(oapply(BoDattr, NULL, mean, "Iter")@output, aes(x=Scenario, weight=BoDattrResult, fill=Exposure_agent))+geom_bar()
+
+tmp <- summary(oapply(BoDattr,NULL,sum,c("Age","Exposure_agent")))
+data.frame(
+  Altiste = tmp$Response,
   Keskiarvo = signif(tmp$mean,2),
   "95 luottamusväli" = paste0(signif(tmp$Q0.025,2)," - ", signif(tmp$Q0.975,2)),
   Keskihajonta = signif(tmp$sd,2)
-)[rev(match(lev, tmp$Exposure_agent)),])
-
-cat("Ruori-skenaarioiden vaikutus tautitaakkaan\n")
-tmp <- summary(utility)
-oprint(data.frame(
-  Altiste = tmp$Exposure_agent,
-  Keskiarvo = signif(tmp$mean,2),
-  "95 luottamusväli" = paste0(signif(tmp$Q0.025,2)," - ", signif(tmp$Q0.975,2)),
-  Keskihajonta = signif(tmp$sd,2)
-)[rev(match(lev, tmp$Exposure_agent)),])
+)
 
 dodge <- position_dodge(width=0.7)
 
@@ -223,16 +230,6 @@ ggplot(summary(oapply(BoDattr, NULL, sum,c("Age","Response"))),
   geom_errorbar(aes(ymin=unlist(Q0.025),ymax=unlist(Q0.975),group=Scenario),position=dodge, width=0.3)+
   geom_text(aes(label=signif(unlist(mean),2), y=unlist(Q0.975)+5000, group=Scenario), position=dodge)
 
-# Utility of actions
-
-ggplot(summary(utility),aes(x=Exposure_agent, weight=unlist(mean)))+geom_bar(fill="lightblue")+
-  coord_flip(ylim=c(-9000,0))+
-  labs(
-   title="Ruori-skenaarioiden vaikutus tautitaakkaan",
-   subtitle="Haittapainotettua elinvuotta vuodessa (DALY/a)")+
-  geom_errorbar(aes(ymin=unlist(Q0.025),ymax=unlist(Q0.975)), width=0.3)+
-  geom_text(aes(label=signif(unlist(mean),2), y=unlist(Q0.025)-600))
-
 ################ Insight network
 
 gr <- scrape(type="assessment")
@@ -244,8 +241,8 @@ render_graph(gr)
 ##################### Diagnostics
 
 objects.latest("Op_en6007", code_name="diagnostics")
-View(showLoctable())
-View(showind())
+showLoctable()
+showind()
 
 ```
 

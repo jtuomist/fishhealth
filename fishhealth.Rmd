@@ -61,7 +61,7 @@ prepare <- function(dat, type=NULL, drop=NULL) {
   return(subgrouping(out))
 }
 
-amount <- Ovariable("amount", data = prepare(dat, "amount", c("Type","Response","Exposure_agent")))
+amount <- Ovariable("amount", data = prepare(dat, "amount", c("Type","Response","Exposure_agent"))) # Filleted weight, i.e. no loss.
 
 # Exposure:To child and To eater not needed, because dioxins are not (yet) included
 
@@ -93,7 +93,7 @@ exposure <- Ovariable(
         Result = 1
       ))
       
-    amount <- amount * 0.7 * 1000 / 5.52 /365.25 # M kg/a per 5.52M population --> g/d per person. Assuming loss 30 % from whole fish to fillet.
+    amount <- amount * 1000 / 5.52 /365.25 # M kg/a per 5.52M population --> g/d per person.
     out <- conc_vit * tmp * amount
     colnames(out@output)[colnames(out@output)=="Nutrient"] <- "Exposure_agent"
       
